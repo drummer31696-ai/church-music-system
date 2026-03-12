@@ -42,7 +42,13 @@ function App() {
   const [showPreview, setShowPreview] = useState(false);
   const [lineupText, setLineupText] = useState('');
   const [showMobileLineup, setShowMobileLineup] = useState(false);
+  const [albumCache, setAlbumCache] = useState({});
+  const [isGeneratingPlaylist, setIsGeneratingPlaylist] = useState(false);
+  const [youtubePlaylistUrl, setYoutubePlaylistUrl] = useState('');
+  const [youtubeThumbnails, setYoutubeThumbnails] = useState({});
   const [newSong, setNewSong] = useState({ title: '', artist: '', category: 'Praise', key: '', bpm: '' });
+  
+  const YOUTUBE_API_KEY = import.meta.env.VITE_YOUTUBE_API_KEY;
   
   useEffect(() => {
     console.log("Current songs count:", songs.length);
@@ -223,6 +229,43 @@ function App() {
     }));
   }, [lineupRole]);
 
+  useEffect(() => {
+    // Background generator for YouTube Playlist
+    const updatePlaylistInBackground = async () => {
+      if (!YOUTUBE_API_KEY || YOUTUBE_API_KEY === 'your_youtube_api_key_here' || !YOUTUBE_API_KEY.startsWith('AIza')) return;
+      
+      const allSongs = lineupSlots.flatMap(slot => slot.songs);
+      if (allSongs.length === 0) {
+        setYoutubePlaylistUrl('');
+        return;
+      }
+
+      try {
+        const searchPromises = allSongs.map(song => searchYouTubeVideo(song));
+        const results = await Promise.all(searchPromises);
+        const validResults = results.filter(r => r !== null);
+        const videoIds = validResults.map(r => r.videoId);
+        
+        // Update thumbnails in background too
+        const newThumbs = {};
+        validResults.forEach(r => { newThumbs[r.id] = r.thumbnail; });
+        setYoutubeThumbnails(prev => ({ ...prev, ...newThumbs }));
+
+        if (videoIds.length > 0) {
+          const url = `https://www.youtube.com/watch_videos?video_ids=${videoIds.join(',')}`;
+          setYoutubePlaylistUrl(url);
+        }
+      } catch (err) {
+        console.log('Background playlist gen failed:', err);
+      }
+    };
+
+    const timeoutId = setTimeout(updatePlaylistInBackground, 1000); // Debounce to avoid too many API calls
+    return () => clearTimeout(timeoutId);
+  }, [lineupSlots]);
+
+  // Fetch songs from Firestore in real-time
+
   // Fetch songs from Firestore in real-time
   useEffect(() => {
     // Add a safety timeout to stop loading if DB is unresponsive
@@ -316,11 +359,33 @@ function App() {
     });
   }, [activeCategory, searchQuery, lineupTheme, activeSlotId, lineupSlots, songs]);
 
+  const fetchAlbumArt = async (song) => {
+    if (!song?.title || albumCache[song.id]) return;
+    try {
+      const query = encodeURIComponent(`${song.title} ${song.artist || ''} christian`);
+      const res = await fetch(`https://itunes.apple.com/search?term=${query}&entity=song&limit=1`);
+      const data = await res.json();
+      if (data.results && data.results.length > 0) {
+        const r = data.results[0];
+        setAlbumCache(prev => ({
+          ...prev,
+          [song.id]: {
+            artUrl: r.artworkUrl100?.replace('100x100', '300x300') || r.artworkUrl100,
+            albumName: r.collectionName || '',
+          }
+        }));
+      }
+    } catch (err) {
+      console.log('Album art fetch failed:', err);
+    }
+  };
+
   const addToSlot = (song) => {
     if (activeSlotId) {
       setLineupSlots(lineupSlots.map(slot => {
         if (slot.id === activeSlotId) {
           if (slot.songs.find(s => s.id === song.id)) return slot;
+          fetchAlbumArt(song);
           return { ...slot, songs: [...slot.songs, song] };
         }
         return slot;
@@ -339,10 +404,69 @@ function App() {
     setActiveCategory(slot.category);
   };
 
+  const searchYouTubeVideo = async (song) => {
+    if (!YOUTUBE_API_KEY || YOUTUBE_API_KEY === 'your_youtube_api_key_here') return null;
+    try {
+      const q = encodeURIComponent(`${song.title} ${song.artist || ''} worship`);
+      const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${q}&type=video&maxResults=1&key=${YOUTUBE_API_KEY}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.items && data.items.length > 0) {
+        return {
+          id: song.id,
+          videoId: data.items[0].id.videoId,
+          thumbnail: data.items[0].snippet.thumbnails.high?.url || data.items[0].snippet.thumbnails.default?.url
+        };
+      }
+    } catch (err) {
+      console.log('YouTube search error:', err);
+    }
+    return null;
+  };
+
+  const generateYouTubePlaylist = async () => {
+    if (!YOUTUBE_API_KEY || YOUTUBE_API_KEY === 'your_youtube_api_key_here' || !YOUTUBE_API_KEY.startsWith('AIza')) {
+      alert('⚠️ Kulang o mali ang YouTube API Key. Palihug i-check ang imong .env file.');
+      return;
+    }
+    setIsGeneratingPlaylist(true);
+    setYoutubePlaylistUrl('');
+    const newThumbs = {};
+    try {
+      const allSongs = lineupSlots.flatMap(slot => slot.songs);
+      const videoIds = [];
+      for (const song of allSongs) {
+        const result = await searchYouTubeVideo(song);
+        if (result) {
+          videoIds.push(result.videoId);
+          newThumbs[song.id] = result.thumbnail;
+        }
+      }
+      setYoutubeThumbnails(newThumbs);
+      if (videoIds.length > 0) {
+        const url = `https://www.youtube.com/watch_videos?video_ids=${videoIds.join(',')}`;
+        setYoutubePlaylistUrl(url);
+        // Update the lineup text to include the playlist link
+        setLineupText(prev => {
+          const marker = '----------------------------\nSent from Church Music System';
+          const playlistLine = `\n🎵 *Playlist (YouTube):*\n${url}\n\n`;
+          return prev.includes(marker) ? prev.replace(marker, playlistLine + marker) : prev + playlistLine;
+        });
+      } else {
+        alert('❌ Wala makit-i ang mga video sa YouTube. Siguroha nga husto imong API key.');
+      }
+    } catch (err) {
+      console.error('Playlist generation error:', err);
+    }
+    setIsGeneratingPlaylist(false);
+  };
+
   const shareLineup = () => {
     const today = new Date().toLocaleDateString('en-US', { 
         weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
     });
+    
+    lineupSlots.forEach(slot => slot.songs.forEach(song => fetchAlbumArt(song)));
     
     let roleText = lineupRole === 'All' ? 'Full Service' : lineupRole;
     let text = `🕊️ *Worship Lineup (${roleText}) - ${today}*\n`;
@@ -352,33 +476,32 @@ function App() {
         if (slot.songs.length > 0) {
             text += `📍 *${slot.label.toUpperCase()}*\n`;
             slot.songs.forEach((song, idx) => {
-                text += `  ${idx + 1}. ${song.title} (${song.key})\n`;
+                const albumInfo = albumCache[song.id];
+                const albumText = albumInfo?.albumName ? ` | 💿 ${albumInfo.albumName}` : '';
+                text += `  ${idx + 1}. ${song.title} (${song.key})${albumText}\n`;
             });
             text += `\n`;
         }
     });
 
+    if (youtubePlaylistUrl) {
+      text += `🎵 *Playlist (YouTube):*\n${youtubePlaylistUrl}\n\n`;
+    }
+
     text += `----------------------------\n`;
     text += `Sent from Church Music System 🎹`;
 
-    const textContent = text;
-    setLineupText(textContent);
+    setLineupText(text);
     setShowPreview(true);
 
-    if (navigator.clipboard) {
-        navigator.clipboard.writeText(textContent).then(() => {
-            setShowCopied(true);
-            setTimeout(() => setShowCopied(false), 3000);
-        }).catch(err => {
-            console.error("Manual copy needed", err);
-        });
-    }
-
+    // This is now SYNCHRONOUS, so browsers won't block it!
     if (navigator.share) {
         navigator.share({
             title: 'Sunday Worship Lineup',
-            text: textContent,
-        }).catch(err => console.log('Share cancelled or failed'));
+            text: text,
+        }).catch(err => console.log('Share menu closed'));
+    } else if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).catch(err => console.log('Copy failed'));
     }
   };
 
@@ -399,14 +522,20 @@ function App() {
         if (slot.songs.length > 0) {
             text += `📍 *${slot.label.toUpperCase()}*\n`;
             slot.songs.forEach((song, idx) => {
-                text += `  ${idx + 1}. ${song.title} (${song.key})\n`;
+                const albumInfo = albumCache[song.id];
+                const albumText = albumInfo?.albumName ? ` | 💿 ${albumInfo.albumName}` : '';
+                text += `  ${idx + 1}. ${song.title} (${song.key})${albumText}\n`;
             });
             text += `\n`;
         }
     });
+
+    if (youtubePlaylistUrl) {
+        text += `\n🎵 *Playlist (i-click para ma-play tanan):*\n${youtubePlaylistUrl}\n\n`;
+    }
     
-    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
-    window.open(url, '_blank');
+    const waUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(waUrl, '_blank');
   };
 
   const handleAddSong = async (e) => {
@@ -842,23 +971,38 @@ function App() {
                               
                               {slot.songs.length > 0 ? (
                                   <div className="space-y-2 animate-in fade-in slide-in-from-left-2 duration-300">
-                                      {slot.songs.map((song) => (
-                                          <div key={song.id} className="flex items-center gap-3 p-2 bg-slate-50 rounded-xl group/song relative">
-                                              <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-blue-600">
-                                                  <Music className="w-4 h-4" />
-                                              </div>
+                                      {slot.songs.map((song) => {
+                                          const albumInfo = albumCache[song.id];
+                                          const ytThumb = youtubeThumbnails[song.id];
+                                          return (
+                                          <div key={song.id} className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl group/song relative">
+                                              {ytThumb || albumInfo?.artUrl ? (
+                                                  <img 
+                                                      src={ytThumb || albumInfo.artUrl} 
+                                                      alt={song.title}
+                                                      className="w-9 h-9 rounded-lg object-cover border border-slate-200 flex-shrink-0 shadow-sm"
+                                                      onError={(e) => { e.target.style.display='none'; }}
+                                                  />
+                                              ) : (
+                                                  <div className="w-9 h-9 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-blue-600 flex-shrink-0">
+                                                      <Music className="w-4 h-4" />
+                                                  </div>
+                                              )}
                                               <div className="flex-1 min-w-0">
                                                   <p className="text-xs font-bold text-slate-900 truncate">{song.title}</p>
-                                                  <p className="text-[10px] text-slate-500">{song.artist}</p>
+                                                  <p className="text-[10px] text-slate-500 truncate">
+                                                      {albumInfo?.albumName ? albumInfo.albumName : song.artist}
+                                                  </p>
                                               </div>
                                               <button 
                                                   onClick={(e) => { e.stopPropagation(); removeSongFromSlot(slot.id, song.id); }}
-                                                  className="opacity-0 group-hover/song:opacity-100 p-1 hover:bg-red-50 hover:text-red-600 text-slate-400 rounded-md transition-all"
+                                                  className="opacity-0 group-hover/song:opacity-100 p-1 hover:bg-red-50 hover:text-red-600 text-slate-400 rounded-md transition-all flex-shrink-0"
                                               >
                                                   <X className="w-3 h-3" />
                                               </button>
                                           </div>
-                                      ))}
+                                          );
+                                      })}
                                   </div>
                               ) : (
                                   <div className="flex items-center gap-3 text-slate-300 italic group">
@@ -958,15 +1102,33 @@ function App() {
                                 <div key={slot.id} className="space-y-2">
                                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{slot.label}</span>
                                     <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100 overflow-hidden shadow-sm">
-                                        {slot.songs.map(song => (
+                                        {slot.songs.map(song => {
+                                          const albumInfo = albumCache[song.id];
+                                          const ytThumb = youtubeThumbnails[song.id];
+                                          return (
                                             <div key={song.id} className="p-3 flex items-center gap-3">
-                                                <Music className="w-4 h-4 text-blue-500" />
-                                                <div className="flex-1">
+                                                {ytThumb || albumInfo?.artUrl ? (
+                                                    <img 
+                                                        src={ytThumb || albumInfo.artUrl} 
+                                                        alt={song.title}
+                                                        className="w-12 h-12 rounded-xl object-cover border border-slate-100 shadow-sm flex-shrink-0"
+                                                        onError={(e) => { e.target.style.display='none'; }}
+                                                    />
+                                                ) : (
+                                                    <div className="w-12 h-12 rounded-xl bg-blue-50 border border-slate-100 flex items-center justify-center flex-shrink-0">
+                                                        <Music className="w-5 h-5 text-blue-400" />
+                                                    </div>
+                                                )}
+                                                <div className="flex-1 min-w-0">
                                                     <p className="text-sm font-bold text-slate-900">{song.title}</p>
-                                                    <p className="text-[10px] text-slate-500">{song.artist} • {song.key}</p>
+                                                    <p className="text-[10px] text-slate-500">{song.artist} • Key: {song.key}</p>
+                                                    {albumInfo?.albumName && (
+                                                        <p className="text-[10px] text-blue-500 font-medium truncate">💿 {albumInfo.albumName}</p>
+                                                    )}
                                                 </div>
                                             </div>
-                                        ))}
+                                          );
+                                        })}
                                     </div>
                                 </div>
                             )
@@ -1004,6 +1166,46 @@ function App() {
                               {showCopied ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
                               {showCopied ? 'Copied!' : 'Copy'}
                           </button>
+                      </div>
+
+                      {/* YouTube Playlist Generator */}
+                      <div className="mb-4 p-4 bg-red-50 border border-red-100 rounded-2xl">
+                          <p className="text-[10px] font-bold text-red-700 mb-2 uppercase tracking-wider">🎵 YouTube Playlist</p>
+                          <p className="text-[10px] text-slate-500 mb-3 leading-relaxed">
+                              I-generate ang usa ka playlist link. Pag-click sa link, mag-play dayon ang tanang kanta sunod-sunod sa YouTube!
+                          </p>
+                          {youtubePlaylistUrl ? (
+                              <div className="space-y-2">
+                                  <div className="flex items-center gap-2 p-2 bg-white border border-green-200 rounded-xl">
+                                      <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                                      <p className="text-[9px] text-green-700 font-bold truncate flex-1">Playlist ready!</p>
+                                      <button
+                                          onClick={() => { navigator.clipboard.writeText(youtubePlaylistUrl); }}
+                                          className="text-[9px] bg-green-100 text-green-700 px-2 py-1 rounded-lg font-bold hover:bg-green-200 transition-all flex-shrink-0"
+                                      >
+                                          Copy Link
+                                      </button>
+                                  </div>
+                                  <button
+                                      onClick={() => window.open(youtubePlaylistUrl, '_blank')}
+                                      className="w-full py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 active:scale-95 shadow-md shadow-red-500/20"
+                                  >
+                                      <PlayCircle className="w-4 h-4" /> Open Playlist sa YouTube
+                                  </button>
+                              </div>
+                          ) : (
+                              <button
+                                  onClick={generateYouTubePlaylist}
+                                  disabled={isGeneratingPlaylist}
+                                  className="w-full py-3 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 active:scale-95 shadow-md shadow-red-500/20"
+                              >
+                                  {isGeneratingPlaylist ? (
+                                      <><Loader2 className="w-4 h-4 animate-spin" /> Gina-search ang mga kanta...</>
+                                  ) : (
+                                      <><PlayCircle className="w-4 h-4" /> Generate YouTube Playlist</>
+                                  )}
+                              </button>
+                          )}
                       </div>
 
                       <div className="space-y-3">

@@ -3,7 +3,7 @@ import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
- //github.com/drummer31696-ai/church-music-system
+//github.com/drummer31696-ai/church-music-system
 const firebaseConfig = {
   apiKey: "AIzaSyA1aE8IKYznCjm9fn_pRGivxOk6rQ6OWCE",
   authDomain: "church-music-system.firebaseapp.com",
