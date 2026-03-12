@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-primary: #1e3a8a;
+  --color-brand-secondary: #d4af37;
+}
+
+:root {
+  background-color: #f8fafc;
+  color: #1e293b;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+.glass-card {
+  @apply bg-white/80 backdrop-blur-md border border-white/20 shadow-xl;
+}
+
+.category-pill {
+  @apply px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 cursor-pointer border;
+}
+
+.category-pill-active {
+  @apply bg-blue-600 text-white border-blue-600 shadow-md transform scale-105;
+}
+
+.category-pill-inactive {
+  @apply bg-white text-slate-600 border-slate-200 hover:border-blue-400 hover:bg-blue-50;
+}
