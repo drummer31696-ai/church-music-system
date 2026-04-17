@@ -1,11 +1,11 @@
 import { useState, useMemo, useEffect } from 'react';
-import { 
-  Music, 
-  Search, 
-  Plus, 
-  Calendar, 
-  PlayCircle, 
-  Clock, 
+import {
+  Music,
+  Search,
+  Plus,
+  Calendar,
+  PlayCircle,
+  Clock,
   CheckCircle2,
   ChevronRight,
   ArrowRight,
@@ -18,13 +18,13 @@ import {
   Trash2
 } from 'lucide-react';
 import { db } from './firebase';
-import { 
-  collection, 
-  addDoc, 
-  onSnapshot, 
-  query, 
-  orderBy, 
-  serverTimestamp 
+import {
+  collection,
+  addDoc,
+  onSnapshot,
+  query,
+  orderBy,
+  serverTimestamp
 } from 'firebase/firestore';
 
 function App() {
@@ -34,12 +34,14 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSlotId, setActiveSlotId] = useState(null);
   const [showCopied, setShowCopied] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   const [isAddingSong, setIsAddingSong] = useState(false);
   const [isSeeding, setIsSeeding] = useState(false);
   const [globalResults, setGlobalResults] = useState([]);
   const [isSearchingGlobal, setIsSearchingGlobal] = useState(false);
   const [isImporting, setIsImporting] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [previewState, setPreviewState] = useState({ songId: null, videoId: null, isLoading: false, isPlaying: false });
   const [lineupText, setLineupText] = useState('');
   const [showMobileLineup, setShowMobileLineup] = useState(false);
   const [albumCache, setAlbumCache] = useState({});
@@ -47,9 +49,17 @@ function App() {
   const [youtubePlaylistUrl, setYoutubePlaylistUrl] = useState('');
   const [youtubeThumbnails, setYoutubeThumbnails] = useState({});
   const [newSong, setNewSong] = useState({ title: '', artist: '', category: 'Praise', key: '', bpm: '' });
-  
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+
   const YOUTUBE_API_KEY = import.meta.env.VITE_YOUTUBE_API_KEY;
-  
+
+  const showToast = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => {
+      setToast(prev => ({ ...prev, show: false }));
+    }, 4000);
+  };
+
   useEffect(() => {
     console.log("Current songs count:", songs.length);
     console.log("Is Adding Song:", isAddingSong);
@@ -222,10 +232,10 @@ function App() {
     } else {
       slotsConfig = []; // Do not show slots if empty
     }
-    
+
     setLineupSlots(prev => slotsConfig.map(slot => {
-        const existing = prev.find(p => p.id === slot.id);
-        return { ...slot, songs: existing ? existing.songs : [] };
+      const existing = prev.find(p => p.id === slot.id);
+      return { ...slot, songs: existing ? existing.songs : [] };
     }));
   }, [lineupRole]);
 
@@ -233,7 +243,7 @@ function App() {
     // Background generator for YouTube Playlist
     const updatePlaylistInBackground = async () => {
       if (!YOUTUBE_API_KEY || YOUTUBE_API_KEY === 'your_youtube_api_key_here' || !YOUTUBE_API_KEY.startsWith('AIza')) return;
-      
+
       const allSongs = lineupSlots.flatMap(slot => slot.songs);
       if (allSongs.length === 0) {
         setYoutubePlaylistUrl('');
@@ -245,7 +255,7 @@ function App() {
         const results = await Promise.all(searchPromises);
         const validResults = results.filter(r => r !== null);
         const videoIds = validResults.map(r => r.videoId);
-        
+
         // Update thumbnails in background too
         const newThumbs = {};
         validResults.forEach(r => { newThumbs[r.id] = r.thumbnail; });
@@ -270,31 +280,31 @@ function App() {
   useEffect(() => {
     // Add a safety timeout to stop loading if DB is unresponsive
     const timeout = setTimeout(() => {
-        if (loading) setLoading(false);
+      if (loading) setLoading(false);
     }, 5000);
 
     try {
-        const q = query(collection(db, "songs"), orderBy("addedAt", "desc"));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const songsData = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
-            setSongs(songsData);
-            setLoading(false);
-            clearTimeout(timeout);
-        }, (error) => {
-            console.error("Firestore error:", error);
-            setLoading(false);
-            clearTimeout(timeout);
-        });
-        return () => {
-            unsubscribe();
-            clearTimeout(timeout);
-        };
-    } catch (err) {
+      const q = query(collection(db, "songs"), orderBy("addedAt", "desc"));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const songsData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setSongs(songsData);
         setLoading(false);
         clearTimeout(timeout);
+      }, (error) => {
+        console.error("Firestore error:", error);
+        setLoading(false);
+        clearTimeout(timeout);
+      });
+      return () => {
+        unsubscribe();
+        clearTimeout(timeout);
+      };
+    } catch (err) {
+      setLoading(false);
+      clearTimeout(timeout);
     }
   }, []);
 
@@ -304,7 +314,7 @@ function App() {
     if (!title) return '';
     const t = title.toLowerCase();
     let keywords = t; // Always include the title itself
-    
+
     // Thematic keyword mappings based on common words in titles
     if (t.includes('cross') || t.includes('blood') || t.includes('lamb') || t.includes('resurrect') || t.includes('grave') || t.includes('alive') || t.includes('agnus')) keywords += ' sacrifice easter forgiveness salvation redemption grace blood atonement';
     if (t.includes('love') || t.includes('reckless') || t.includes('father') || t.includes('good') || t.includes('grace')) keywords += ' mercy unconditional compassion kindness acceptance family';
@@ -325,7 +335,7 @@ function App() {
     if (t.includes('bless')) keywords += ' favor provision grace goodness peace';
     if (t.includes('worthy') || t.includes('majesty') || t.includes('glorious')) keywords += ' honor praise exalt awe reverence holy throne';
     if (t.includes('fear') || t.includes('chain') || t.includes('rescue')) keywords += ' freedom deliverance break bounds safe save free captivity';
-    
+
     // Explicit themes for specific popular songs
     if (t === '10,000 reasons') keywords += ' thanksgiving soul bless praise gratitude morning';
     if (t === 'what a beautiful name') keywords += ' jesus power resurrection majestic name word creation';
@@ -335,24 +345,24 @@ function App() {
     if (t === 'jireh') keywords += ' provider enough content peace trust provision';
     if (t === 'in christ alone') keywords += ' foundation resurrection cross cornerstone strength';
     if (t === 'cornerstone') keywords += ' rock storm anchor foundation christ';
-    
+
     return keywords;
   };
 
   const filteredSongs = useMemo(() => {
     let categoryToFilter = activeCategory;
     if (activeSlotId && activeCategory === 'All') {
-        const activeSlot = lineupSlots.find(s => s.id === activeSlotId);
-        if (activeSlot) categoryToFilter = activeSlot.category;
+      const activeSlot = lineupSlots.find(s => s.id === activeSlotId);
+      if (activeSlot) categoryToFilter = activeSlot.category;
     }
 
     return songs.filter(song => {
       if (!song) return false;
       const matchesCategory = categoryToFilter === 'All' || song.category === categoryToFilter;
-      const matchesSearch = (song.title?.toLowerCase() || '').includes(searchQuery?.toLowerCase() || '') || 
-                           (song.artist?.toLowerCase() || '').includes(searchQuery?.toLowerCase() || '');
+      const matchesSearch = (song.title?.toLowerCase() || '').includes(searchQuery?.toLowerCase() || '') ||
+        (song.artist?.toLowerCase() || '').includes(searchQuery?.toLowerCase() || '');
       const songKeywords = getSongThemes(song.title);
-      
+
       const matchesTheme = lineupTheme ? songKeywords.includes(lineupTheme?.toLowerCase()?.trim()) : true;
 
       return matchesCategory && matchesSearch && matchesTheme;
@@ -394,7 +404,7 @@ function App() {
   };
 
   const removeSongFromSlot = (slotId, songId) => {
-    setLineupSlots(lineupSlots.map(slot => 
+    setLineupSlots(lineupSlots.map(slot =>
       slot.id === slotId ? { ...slot, songs: slot.songs.filter(s => s.id !== songId) } : slot
     ));
   };
@@ -424,9 +434,27 @@ function App() {
     return null;
   };
 
+  const handlePreview = async (song, e) => {
+    e.stopPropagation();
+    if (previewState.songId === song.id && previewState.isPlaying) {
+      setPreviewState({ songId: null, videoId: null, isLoading: false, isPlaying: false });
+      return;
+    }
+    
+    setPreviewState({ songId: song.id, videoId: null, isLoading: true, isPlaying: false });
+    
+    const result = await searchYouTubeVideo(song);
+    if (result && result.videoId) {
+      setPreviewState({ songId: song.id, videoId: result.videoId, isLoading: false, isPlaying: true });
+    } else {
+      setPreviewState({ songId: null, videoId: null, isLoading: false, isPlaying: false });
+      showToast('❌ Wala makit-i ang audio preview para ani nga kanta.', 'error');
+    }
+  };
+
   const generateYouTubePlaylist = async () => {
     if (!YOUTUBE_API_KEY || YOUTUBE_API_KEY === 'your_youtube_api_key_here' || !YOUTUBE_API_KEY.startsWith('AIza')) {
-      alert('⚠️ Kulang o mali ang YouTube API Key. Palihug i-check ang imong .env file.');
+      showToast('⚠️ Kulang o mali ang YouTube API Key. Palihug i-check ang imong .env file.', 'error');
       return;
     }
     setIsGeneratingPlaylist(true);
@@ -448,12 +476,12 @@ function App() {
         setYoutubePlaylistUrl(url);
         // Update the lineup text to include the playlist link
         setLineupText(prev => {
-          const marker = '----------------------------\nSent from Church Music System';
-          const playlistLine = `\n🎵 *Playlist (YouTube):*\n${url}\n\n`;
+          const marker = '━━━━━━━━━━━━━━━━━━━━━\n🎹 _Sent via Church Music System_ 🕊️';
+          const playlistLine = `▶️ *YOUTUBE PLAYLIST:*\n👉 ${url}\n\n`;
           return prev.includes(marker) ? prev.replace(marker, playlistLine + marker) : prev + playlistLine;
         });
       } else {
-        alert('❌ Wala makit-i ang mga video sa YouTube. Siguroha nga husto imong API key.');
+        showToast('❌ Wala makit-i ang mga video sa YouTube. Siguroha nga husto imong API key.', 'error');
       }
     } catch (err) {
       console.error('Playlist generation error:', err);
@@ -461,47 +489,83 @@ function App() {
     setIsGeneratingPlaylist(false);
   };
 
-  const shareLineup = () => {
-    const today = new Date().toLocaleDateString('en-US', { 
-        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+  const generateShareText = (isWhatsApp = false) => {
+    const today = new Date().toLocaleDateString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
     });
-    
+
     lineupSlots.forEach(slot => slot.songs.forEach(song => fetchAlbumArt(song)));
-    
+
     let roleText = lineupRole === 'All' ? 'Full Service' : lineupRole;
-    let text = `🕊️ *Worship Lineup (${roleText}) - ${today}*\n`;
-    text += `----------------------------\n\n`;
+    let text = `✨ *WORSHIP LINEUP* ✨\n`;
+    text += `📅 *Date:* ${today}\n`;
+    text += `👤 *Role:* ${roleText}\n`;
+    text += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+    let hasSongs = false;
 
     lineupSlots.forEach(slot => {
-        if (slot.songs.length > 0) {
-            text += `📍 *${slot.label.toUpperCase()}*\n`;
-            slot.songs.forEach((song, idx) => {
-                const albumInfo = albumCache[song.id];
-                const albumText = albumInfo?.albumName ? ` | 💿 ${albumInfo.albumName}` : '';
-                text += `  ${idx + 1}. ${song.title} (${song.key})${albumText}\n`;
-            });
-            text += `\n`;
-        }
+      if (slot.songs.length > 0) {
+        hasSongs = true;
+        text += `🔹 *${slot.label.toUpperCase()}*\n`;
+        slot.songs.forEach((song, idx) => {
+          const albumInfo = albumCache[song.id];
+          const albumText = albumInfo?.albumName ? ` • 💿 ${albumInfo.albumName}` : '';
+          text += `   ${idx + 1}. ${song.title} [Key: ${song.key}]${albumText}\n`;
+        });
+        text += `\n`;
+      }
     });
 
-    if (youtubePlaylistUrl) {
-      text += `🎵 *Playlist (YouTube):*\n${youtubePlaylistUrl}\n\n`;
+    if (!hasSongs) {
+      text += `   (Wala pay kanta nga na-add)\n\n`;
     }
 
-    text += `----------------------------\n`;
-    text += `Sent from Church Music System 🎹`;
+    if (youtubePlaylistUrl) {
+      if (isWhatsApp) {
+        text += `▶️ *PLAYLIST (Click to play):*\n👉 ${youtubePlaylistUrl}\n\n`;
+      } else {
+        text += `▶️ *YOUTUBE PLAYLIST:*\n👉 ${youtubePlaylistUrl}\n\n`;
+      }
+    }
 
+    text += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    text += `🎹 _Sent via Church Music System_ 🕊️`;
+
+    return text;
+  };
+
+  const shareLineup = () => {
+    if (isSharing) return;
+    setIsSharing(true);
+    setTimeout(() => setIsSharing(false), 2000);
+
+    const text = generateShareText(false);
     setLineupText(text);
     setShowPreview(true);
 
-    // This is now SYNCHRONOUS, so browsers won't block it!
     if (navigator.share) {
-        navigator.share({
-            title: 'Sunday Worship Lineup',
-            text: text,
-        }).catch(err => console.log('Share menu closed'));
+      navigator.share({
+        title: 'Sunday Worship Lineup',
+        text: text,
+      }).catch(err => console.log('Share menu closed'));
     } else if (navigator.clipboard) {
-        navigator.clipboard.writeText(text).catch(err => console.log('Copy failed'));
+      navigator.clipboard.writeText(text);
+      setShowCopied(true);
+      setTimeout(() => setShowCopied(false), 2000);
+    }
+  };
+
+  const handleNativeShare = () => {
+    if (navigator.share) {
+      navigator.share({
+        title: 'Sunday Worship Lineup',
+        text: lineupText,
+      }).catch(err => console.log('Share menu closed'));
+    } else {
+      navigator.clipboard.writeText(lineupText);
+      setShowCopied(true);
+      setTimeout(() => setShowCopied(false), 2000);
     }
   };
 
@@ -510,30 +574,7 @@ function App() {
   };
 
   const shareToWhatsApp = () => {
-    const today = new Date().toLocaleDateString('en-US', { 
-        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
-    });
-    
-    let roleText = lineupRole === 'All' ? 'Full Service' : lineupRole;
-    let text = `🕊️ *Worship Lineup (${roleText}) - ${today}*\n`;
-    text += `----------------------------\n\n`;
-
-    lineupSlots.forEach(slot => {
-        if (slot.songs.length > 0) {
-            text += `📍 *${slot.label.toUpperCase()}*\n`;
-            slot.songs.forEach((song, idx) => {
-                const albumInfo = albumCache[song.id];
-                const albumText = albumInfo?.albumName ? ` | 💿 ${albumInfo.albumName}` : '';
-                text += `  ${idx + 1}. ${song.title} (${song.key})${albumText}\n`;
-            });
-            text += `\n`;
-        }
-    });
-
-    if (youtubePlaylistUrl) {
-        text += `\n🎵 *Playlist (i-click para ma-play tanan):*\n${youtubePlaylistUrl}\n\n`;
-    }
-    
+    const text = generateShareText(true);
     const waUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
     window.open(waUrl, '_blank');
   };
@@ -541,7 +582,7 @@ function App() {
   const handleAddSong = async (e) => {
     e.preventDefault();
     if (!newSong.title || !newSong.artist) return;
-    
+
     try {
       await addDoc(collection(db, "songs"), {
         ...newSong,
@@ -549,15 +590,16 @@ function App() {
       });
       setNewSong({ title: '', artist: '', category: 'Praise', key: '', bpm: '' });
       setIsAddingSong(false);
+      showToast("✅ Malampuson nga na-add ang kanta!", "success");
     } catch (err) {
       console.error("Error adding song: ", err);
-      alert("Error adding song. Check console for details.");
+      showToast("❌ Error adding song. Check console for details.", "error");
     }
   };
 
   const clearLineup = () => {
     if (window.confirm("Klaro nimo nga i-clear ang tibuok lineup?")) {
-        setLineupSlots(lineupSlots.map(s => ({ ...s, songs: [] })));
+      setLineupSlots(lineupSlots.map(s => ({ ...s, songs: [] })));
     }
   };
 
@@ -565,25 +607,25 @@ function App() {
     if (isSeeding) return;
     setIsSeeding(true);
     try {
-        const { writeBatch, doc } = await import('firebase/firestore');
-        const batch = writeBatch(db);
-        const songsRef = collection(db, "songs");
+      const { writeBatch, doc } = await import('firebase/firestore');
+      const batch = writeBatch(db);
+      const songsRef = collection(db, "songs");
 
-        initialSongs.forEach((song) => {
-            const newDocRef = doc(songsRef);
-            batch.set(newDocRef, {
-                ...song,
-                addedAt: serverTimestamp()
-            });
+      initialSongs.forEach((song) => {
+        const newDocRef = doc(songsRef);
+        batch.set(newDocRef, {
+          ...song,
+          addedAt: serverTimestamp()
         });
+      });
 
-        await batch.commit();
-        setIsSeeding(false);
-        alert("✅ Malampuson nga na-import ang mga kanta!");
+      await batch.commit();
+      setIsSeeding(false);
+      showToast("✅ Malampuson nga na-import ang mga kanta!", "success");
     } catch (err) {
-        console.error("Error seeding:", err);
-        setIsSeeding(false);
-        alert("❌ May problema sa pag-import. Palihug sulayi og usab.");
+      console.error("Error seeding:", err);
+      setIsSeeding(false);
+      showToast("❌ May problema sa pag-import. Palihug sulayi og usab.", "error");
     }
   };
 
@@ -591,19 +633,19 @@ function App() {
     if (!searchQuery) return;
     setIsSearchingGlobal(true);
     try {
-        const response = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(searchQuery + ' christian worship')}&entity=song&limit=6`);
-        const data = await response.json();
-        const results = data.results.map(r => ({
-            id: `global-${r.trackId}`,
-            title: r.trackName,
-            artist: r.artistName,
-            category: 'Worship', // Default
-            key: '?', // iTunes doesn't provide key
-            bpm: '?'  // iTunes doesn't provide BPM
-        }));
-        setGlobalResults(results);
+      const response = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(searchQuery + ' christian worship')}&entity=song&limit=6`);
+      const data = await response.json();
+      const results = data.results.map(r => ({
+        id: `global-${r.trackId}`,
+        title: r.trackName,
+        artist: r.artistName,
+        category: 'Worship', // Default
+        key: '?', // iTunes doesn't provide key
+        bpm: '?'  // iTunes doesn't provide BPM
+      }));
+      setGlobalResults(results);
     } catch (err) {
-        console.error("Global search error:", err);
+      console.error("Global search error:", err);
     }
     setIsSearchingGlobal(false);
   };
@@ -611,21 +653,31 @@ function App() {
   const importSong = async (song) => {
     setIsImporting(song.id);
     try {
-        await addDoc(collection(db, "songs"), {
-            title: song.title,
-            artist: song.artist,
-            category: activeCategory === 'All' ? 'Worship' : activeCategory,
-            key: '?',
-            bpm: '0',
-            addedAt: serverTimestamp()
-        });
-        setGlobalResults(prev => prev.filter(s => s.id !== song.id));
-        alert(`✅ Na-add na ang '${song.title}' sa imong library!`);
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          reject(new Error("Timeout: Could not connect to database. Palihug i-check ang imong internet o database rules."));
+        }, 6000); // 6 seconds timeout
+      });
+
+      const addDocPromise = addDoc(collection(db, "songs"), {
+        title: song.title,
+        artist: song.artist,
+        category: activeCategory === 'All' ? 'Worship' : activeCategory,
+        key: '?',
+        bpm: '0',
+        addedAt: serverTimestamp()
+      });
+
+      await Promise.race([addDocPromise, timeoutPromise]);
+
+      setGlobalResults(prev => prev.filter(s => s.id !== song.id));
+      showToast(`✅ Na-add na ang '${song.title}' sa imong library!`, 'success');
     } catch (err) {
-        console.error("Import error:", err);
-        alert("❌ Dili ma-add ang kanta. Please try again.");
+      console.error("Import error:", err);
+      showToast(`❌ Dili ma-add ang kanta: ${err.message}`, 'error');
+    } finally {
+      setIsImporting(null);
     }
-    setIsImporting(null);
   };
 
   return (
@@ -633,36 +685,46 @@ function App() {
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-3">
-            <div className="bg-blue-600 p-1.5 sm:p-2 rounded-lg">
-              <Music className="text-white w-5 h-5 sm:w-6 sm:h-6" />
+            <div className="bg-gray-200 p-1.5 sm:p-2 rounded-lg">
+              <div className="w-9 h-9 rounded-full border-2 border-white shadow-sm overflow-hidden flex items-center justify-center bg-gray-200">
+                <img
+                  src="/logo.jpg"
+                  alt="Profile"
+                  className="w-full h-full object-cover"
+                />
+              </div>
             </div>
             <h1 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight leading-none">
-                Church <span className="text-blue-600 block sm:inline">Music System</span>
+              Church <span className="text-blue-600 block sm:inline">Music System</span>
             </h1>
           </div>
           <div className="flex items-center gap-2 sm:gap-4">
-            <button 
+            <button
               onClick={() => setIsAddingSong(!isAddingSong)}
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-md active:scale-95"
             >
               <PlusCircle className="w-4 h-4" />
               <span className="hidden xs:inline">Add Song</span>
             </button>
-            <button 
-                onClick={() => setShowMobileLineup(!showMobileLineup)}
-                className="lg:hidden p-2 bg-slate-100 text-slate-600 rounded-xl relative"
+            <button
+              onClick={() => setShowMobileLineup(!showMobileLineup)}
+              className="lg:hidden p-2 bg-slate-100 text-slate-600 rounded-xl relative"
             >
-                <Calendar className="w-5 h-5" />
-                {lineupSlots.reduce((acc, slot) => acc + slot.songs.length, 0) > 0 && (
-                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] flex items-center justify-center rounded-full font-bold">
-                        {lineupSlots.reduce((acc, slot) => acc + slot.songs.length, 0)}
-                    </span>
-                )}
+              <Calendar className="w-5 h-5" />
+              {lineupSlots.reduce((acc, slot) => acc + slot.songs.length, 0) > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] flex items-center justify-center rounded-full font-bold">
+                  {lineupSlots.reduce((acc, slot) => acc + slot.songs.length, 0)}
+                </span>
+              )}
             </button>
             <div className="hidden sm:flex items-center gap-2 border-l border-slate-200 pl-4">
-                <div className="w-9 h-9 rounded-full bg-blue-100 border-2 border-white shadow-sm flex items-center justify-center text-blue-700 font-bold text-sm">
-                RL
-                </div>
+              {/* <div className="w-9 h-9 rounded-full border-2 border-white shadow-sm overflow-hidden flex items-center justify-center bg-gray-200">
+                <img
+                  src="logo.jpg"
+                  alt="Profile"
+                  className="w-full h-full object-cover"
+                />
+              </div> */}
             </div>
           </div>
         </div>
@@ -670,63 +732,63 @@ function App() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex flex-col lg:flex-row gap-8">
-          
+
           <div className="flex-1 space-y-6">
             {isAddingSong && (
-                <div className="bg-white p-6 rounded-3xl border-2 border-blue-100 shadow-xl animate-in fade-in slide-in-from-top-4 duration-300">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-bold text-slate-800">Add New Song to Library</h3>
-                        <button onClick={() => setIsAddingSong(false)} className="text-slate-400 hover:text-red-500">
-                            <X className="w-5 h-5" />
-                        </button>
-                    </div>
-                    <form onSubmit={handleAddSong} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <input 
-                            type="text" required placeholder="Song Title"
-                            className="p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none"
-                            value={newSong?.title || ''} onChange={e => setNewSong({...newSong, title: e.target.value})}
-                        />
-                        <input 
-                            type="text" required placeholder="Artist"
-                            className="p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none"
-                            value={newSong?.artist || ''} onChange={e => setNewSong({...newSong, artist: e.target.value})}
-                        />
-                        <select 
-                            className="p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none"
-                            value={newSong?.category || 'Praise'} onChange={e => setNewSong({...newSong, category: e.target.value})}
-                        >
-                            {categories.filter(c => c !== 'All').map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                        <input 
-                            type="text" placeholder="Key"
-                            className="p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none"
-                            value={newSong?.key || ''} onChange={e => setNewSong({...newSong, key: e.target.value})}
-                        />
-                        <input 
-                            type="number" placeholder="BPM"
-                            className="p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none"
-                            value={newSong?.bpm || ''} onChange={e => setNewSong({...newSong, bpm: e.target.value})}
-                        />
-                        <button type="submit" className="md:col-span-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95 text-sm">
-                            Save to Cloud
-                        </button>
-                    </form>
-                    
-                    <div className="mt-6 pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
-                        <div className="text-left text-xs text-slate-500">
-                            <p className="font-bold text-slate-700 mb-1">Quick Start / Bulk Import</p>
-                            <p>Gusto nimo i-load ang 120+ common songs (English, Tagalog, & Bisaya)?</p>
-                        </div>
-                        <button 
-                            onClick={seedDatabase}
-                            disabled={isSeeding}
-                            className="w-full sm:w-auto bg-blue-50 text-blue-600 hover:bg-blue-100 px-6 py-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 border border-blue-200 shadow-sm"
-                        >
-                            {isSeeding ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlusCircle className="w-4 h-4" />}
-                            {isSeeding ? 'Importing Samples...' : 'Import 120+ Samples (Filipino & Bisaya)'}
-                        </button>
-                    </div>
+              <div className="bg-white p-6 rounded-3xl border-2 border-blue-100 shadow-xl animate-in fade-in slide-in-from-top-4 duration-300">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-bold text-slate-800">Add New Song to Library</h3>
+                  <button onClick={() => setIsAddingSong(false)} className="text-slate-400 hover:text-red-500">
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
+                <form onSubmit={handleAddSong} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <input
+                    type="text" required placeholder="Song Title"
+                    className="p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none"
+                    value={newSong?.title || ''} onChange={e => setNewSong({ ...newSong, title: e.target.value })}
+                  />
+                  <input
+                    type="text" required placeholder="Artist"
+                    className="p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none"
+                    value={newSong?.artist || ''} onChange={e => setNewSong({ ...newSong, artist: e.target.value })}
+                  />
+                  <select
+                    className="p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none"
+                    value={newSong?.category || 'Praise'} onChange={e => setNewSong({ ...newSong, category: e.target.value })}
+                  >
+                    {categories.filter(c => c !== 'All').map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <input
+                    type="text" placeholder="Key"
+                    className="p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none"
+                    value={newSong?.key || ''} onChange={e => setNewSong({ ...newSong, key: e.target.value })}
+                  />
+                  <input
+                    type="number" placeholder="BPM"
+                    className="p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none"
+                    value={newSong?.bpm || ''} onChange={e => setNewSong({ ...newSong, bpm: e.target.value })}
+                  />
+                  <button type="submit" className="md:col-span-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95 text-sm">
+                    Save to Cloud
+                  </button>
+                </form>
+
+                <div className="mt-6 pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="text-left text-xs text-slate-500">
+                    <p className="font-bold text-slate-700 mb-1">Quick Start / Bulk Import</p>
+                    <p>Gusto nimo i-load ang 120+ common songs (English, Tagalog, & Bisaya)?</p>
+                  </div>
+                  <button
+                    onClick={seedDatabase}
+                    disabled={isSeeding}
+                    className="w-full sm:w-auto bg-blue-50 text-blue-600 hover:bg-blue-100 px-6 py-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 border border-blue-200 shadow-sm"
+                  >
+                    {isSeeding ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlusCircle className="w-4 h-4" />}
+                    {isSeeding ? 'Importing Samples...' : 'Import 120+ Samples (Filipino & Bisaya)'}
+                  </button>
+                </div>
+              </div>
             )}
 
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -735,38 +797,38 @@ function App() {
                   {activeSlotId ? `For ${lineupSlots.find(s => s.id === activeSlotId)?.label || ''}` : 'Song Library'}
                 </h2>
                 {activeSlotId && (
-                    <button 
-                        onClick={() => {setActiveSlotId(null); setActiveCategory('All');}}
-                        className="text-xs sm:text-sm text-blue-600 font-medium hover:underline flex items-center gap-1 mt-1"
-                    >
-                        <X className="w-3 h-3" /> Clear selection
-                    </button>
+                  <button
+                    onClick={() => { setActiveSlotId(null); setActiveCategory('All'); }}
+                    className="text-xs sm:text-sm text-blue-600 font-medium hover:underline flex items-center gap-1 mt-1"
+                  >
+                    <X className="w-3 h-3" /> Clear selection
+                  </button>
                 )}
               </div>
-              
+
               <div className="relative group w-full md:w-auto md:min-w-[300px] flex gap-2">
                 <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors w-4 h-4" />
-                    <input 
-                    type="text" 
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors w-4 h-4" />
+                  <input
+                    type="text"
                     placeholder="Search songs or artists..."
                     className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
                     value={searchQuery}
                     onChange={(e) => {
-                        setSearchQuery(e.target.value);
-                        if (e.target.value === '') setGlobalResults([]);
+                      setSearchQuery(e.target.value);
+                      if (e.target.value === '') setGlobalResults([]);
                     }}
                     onKeyDown={(e) => e.key === 'Enter' && searchOnline()}
-                    />
+                  />
                 </div>
                 {searchQuery && (
-                    <button 
-                        onClick={searchOnline}
-                        className="bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-black transition-all flex items-center gap-2"
-                    >
-                        {isSearchingGlobal ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
-                        Online
-                    </button>
+                  <button
+                    onClick={searchOnline}
+                    className="bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-black transition-all flex items-center gap-2"
+                  >
+                    {isSearchingGlobal ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
+                    Online
+                  </button>
                 )}
               </div>
             </div>
@@ -776,9 +838,8 @@ function App() {
                 <button
                   key={cat}
                   onClick={() => setActiveCategory(cat)}
-                  className={`category-pill flex-shrink-0 sm:flex-shrink-1 px-4 py-2 ${
-                    activeCategory === cat ? 'category-pill-active' : 'category-pill-inactive'
-                  }`}
+                  className={`category-pill flex-shrink-0 sm:flex-shrink-1 px-4 py-2 ${activeCategory === cat ? 'category-pill-active' : 'category-pill-inactive'
+                    }`}
                 >
                   {cat}
                 </button>
@@ -787,254 +848,271 @@ function App() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {loading ? (
-                  <div className="col-span-full py-20 flex flex-col items-center text-slate-400">
-                      <Loader2 className="w-10 h-10 animate-spin mb-4" />
-                      <p>Connecting to Heaven's Database...</p>
-                  </div>
+                <div className="col-span-full py-20 flex flex-col items-center text-slate-400">
+                  <Loader2 className="w-10 h-10 animate-spin mb-4" />
+                  <p>Connecting to Heaven's Database...</p>
+                </div>
               ) : songs.length === 0 ? (
-                  <div className="col-span-full py-20 text-center bg-white rounded-3xl border border-dashed border-slate-300">
-                      <Music className="w-12 h-12 text-slate-200 mx-auto mb-4" />
-                      <h3 className="text-xl font-bold text-slate-800 mb-2">Empty Library</h3>
-                      <p className="text-slate-500 mb-6 max-w-sm mx-auto">Wala pa'y sulod ang imong library. Gusto nimo butangan nato og mga common worship songs?</p>
-                      <button 
-                        onClick={seedDatabase}
-                        disabled={isSeeding}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg flex items-center gap-2 mx-auto"
-                      >
-                        {isSeeding ? <Loader2 className="w-5 h-5 animate-spin" /> : <PlusCircle className="w-5 h-5" />}
-                        {isSeeding ? 'Adding Songs...' : 'Add Sample Songs'}
-                      </button>
-                  </div>
-                ) : filteredSongs.length > 0 ? filteredSongs.map(song => (
-                <div key={song?.id || Math.random()} className={`bg-white p-5 rounded-2xl border transition-all group relative overflow-hidden ${
-                    activeSlotId ? 'ring-2 ring-blue-500/10 border-blue-200' : 'border-slate-200 shadow-sm hover:shadow-md'
-                }`}>
-                  <div className={`absolute top-0 left-0 w-1 h-full ${
-                    song?.category === 'Praise' ? 'bg-amber-400' : 
-                    song?.category === 'Worship' ? 'bg-blue-400' : 
-                    song?.category === 'Victory' ? 'bg-green-400' :
-                    song?.category === 'Offering' ? 'bg-orange-400' :
-                    song?.category === 'Closing' ? 'bg-red-400' : 'bg-purple-400'
-                  }`} />
-                  
+                <div className="col-span-full py-20 text-center bg-white rounded-3xl border border-dashed border-slate-300">
+                  <Music className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                  <h3 className="text-xl font-bold text-slate-800 mb-2">Empty Library</h3>
+                  <p className="text-slate-500 mb-6 max-w-sm mx-auto">Wala pa'y sulod ang imong library. Gusto nimo butangan nato og mga common worship songs?</p>
+                  <button
+                    onClick={seedDatabase}
+                    disabled={isSeeding}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg flex items-center gap-2 mx-auto"
+                  >
+                    {isSeeding ? <Loader2 className="w-5 h-5 animate-spin" /> : <PlusCircle className="w-5 h-5" />}
+                    {isSeeding ? 'Adding Songs...' : 'Add Sample Songs'}
+                  </button>
+                </div>
+              ) : filteredSongs.length > 0 ? filteredSongs.map(song => (
+                <div key={song?.id || Math.random()} className={`bg-white p-5 rounded-2xl border transition-all group relative overflow-hidden ${activeSlotId ? 'ring-2 ring-blue-500/10 border-blue-200' : 'border-slate-200 shadow-sm hover:shadow-md'
+                  }`}>
+                  <div className={`absolute top-0 left-0 w-1 h-full ${song?.category === 'Praise' ? 'bg-amber-400' :
+                    song?.category === 'Worship' ? 'bg-blue-400' :
+                      song?.category === 'Victory' ? 'bg-green-400' :
+                        song?.category === 'Offering' ? 'bg-orange-400' :
+                          song?.category === 'Closing' ? 'bg-red-400' : 'bg-purple-400'
+                    }`} />
+
                   <div className="flex justify-between items-start mb-3">
-                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                      song?.category === 'Praise' ? 'bg-amber-50 text-amber-600 border border-amber-100' : 
-                      song?.category === 'Worship' ? 'bg-blue-50 text-blue-600 border border-blue-100' : 
-                      'bg-purple-50 text-purple-600 border border-purple-100'
-                    }`}>
+                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${song?.category === 'Praise' ? 'bg-amber-50 text-amber-600 border border-amber-100' :
+                      song?.category === 'Worship' ? 'bg-blue-50 text-blue-600 border border-blue-100' :
+                        'bg-purple-50 text-purple-600 border border-purple-100'
+                      }`}>
                       {song?.category || 'General'}
                     </span>
                     <span className="text-xs font-mono text-slate-400">Key: {song?.key || '?'}</span>
                   </div>
-                  
+
                   <h3 className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors truncate">{song?.title || 'Untitled'}</h3>
                   <p className="text-sm text-slate-500 mb-4 truncate">{song?.artist || 'Unknown Artist'}</p>
-                  
+
                   <div className="flex items-center justify-between pt-4 border-t border-slate-50">
-                    <div className="flex items-center gap-2 text-xs text-slate-400 font-medium">
-                      <Clock className="w-3 h-3" />
-                      {song?.bpm || '0'} BPM
+                    <div className="flex flex-col gap-2">
+                       <div className="flex items-center gap-2 text-xs text-slate-400 font-medium">
+                         <Clock className="w-3 h-3" />
+                         {song?.bpm || '0'} BPM
+                       </div>
+                       <button
+                         onClick={(e) => handlePreview(song, e)}
+                         className={`flex items-center gap-1.5 text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-lg transition-all w-fit ${previewState.songId === song?.id ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
+                       >
+                         {previewState.isLoading && previewState.songId === song?.id ? (
+                           <><Loader2 className="w-3 h-3 animate-spin"/> Loading</>
+                         ) : previewState.songId === song?.id && previewState.isPlaying ? (
+                           <><X className="w-3 h-3"/> Stop Preview</>
+                         ) : (
+                           <><PlayCircle className="w-3 h-3"/> Play Preview</>
+                         )}
+                       </button>
                     </div>
                     {activeSlotId ? (
-                        <button 
-                            onClick={() => addToSlot(song)}
-                            disabled={lineupSlots.find(s => s.id === activeSlotId)?.songs?.find(s => s.id === song?.id)}
-                            className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-700 transition-all flex items-center gap-1.5 disabled:bg-green-600 shadow-sm active:scale-95"
-                        >
-                            {lineupSlots.find(s => s.id === activeSlotId)?.songs?.find(s => s.id === song?.id) ? (
-                                <><CheckCircle2 className="w-3.5 h-3.5" /> Added</>
-                            ) : (
-                                <><Plus className="w-3.5 h-3.5" /> Add to {lineupSlots.find(s => s.id === activeSlotId)?.label || 'Slot'}</>
-                            )}
-                        </button>
+                      <button
+                        onClick={() => addToSlot(song)}
+                        disabled={lineupSlots.find(s => s.id === activeSlotId)?.songs?.find(s => s.id === song?.id)}
+                        className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-700 transition-all flex items-center gap-1.5 disabled:bg-green-600 shadow-sm active:scale-95"
+                      >
+                        {lineupSlots.find(s => s.id === activeSlotId)?.songs?.find(s => s.id === song?.id) ? (
+                          <><CheckCircle2 className="w-3.5 h-3.5" /> Added</>
+                        ) : (
+                          <><Plus className="w-3.5 h-3.5" /> Add to {lineupSlots.find(s => s.id === activeSlotId)?.label || 'Slot'}</>
+                        )}
+                      </button>
                     ) : (
-                        <div className="text-[10px] text-slate-400 font-bold uppercase italic">Select a slot first</div>
+                      <div className="text-[10px] text-slate-400 font-bold uppercase italic mt-auto">Select a slot first</div>
                     )}
                   </div>
                 </div>
               )) : (
                 <div className="col-span-full py-10 text-center bg-white rounded-3xl border border-dashed border-slate-300">
-                    <Music className="w-12 h-12 text-slate-200 mx-auto mb-4" />
-                    <p className="text-slate-500 font-medium mb-1">No local songs found.</p>
-                    <p className="text-[10px] text-slate-400">Click the 'Online' button or press Enter to search the internet.</p>
+                  <Music className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                  <p className="text-slate-500 font-medium mb-1">No local songs found.</p>
+                  <p className="text-[10px] text-slate-400">Click the 'Online' button or press Enter to search the internet.</p>
                 </div>
               )}
 
               {/* Global Online Results */}
               {globalResults.length > 0 && (
-                  <>
-                    <div className="col-span-full pt-6 pb-2 border-t border-slate-200">
-                        <h3 className="text-sm font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
-                            <ExternalLink className="w-4 h-4" /> Online Search Results
-                        </h3>
+                <>
+                  <div className="col-span-full pt-6 pb-2 border-t border-slate-200">
+                    <h3 className="text-sm font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                      <ExternalLink className="w-4 h-4" /> Online Search Results
+                    </h3>
+                  </div>
+                  {globalResults.map(song => (
+                    <div key={song.id} className="bg-white p-5 rounded-2xl border border-blue-100 shadow-sm hover:shadow-md transition-all group relative overflow-hidden bg-gradient-to-br from-white to-blue-50/30">
+                      <div className="flex justify-between items-start mb-3">
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-600 text-white">Online</span>
+                      </div>
+                      <h3 className="font-bold text-slate-900">{song.title}</h3>
+                      <p className="text-sm text-slate-500 mb-4 font-medium">{song.artist}</p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={(e) => handlePreview(song, e)}
+                          className={`p-2 rounded-xl border flex items-center justify-center transition-all ${previewState.songId === song.id ? 'bg-red-50 border-red-200 text-red-600' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                          title="Preview Song"
+                        >
+                           {previewState.isLoading && previewState.songId === song.id ? <Loader2 className="w-4 h-4 animate-spin" /> : previewState.songId === song.id && previewState.isPlaying ? <X className="w-4 h-4" /> : <PlayCircle className="w-4 h-4" />}
+                        </button>
+                        <button
+                          onClick={() => importSong(song)}
+                          disabled={isImporting === song.id}
+                          className="flex-1 py-2 bg-white border border-blue-200 text-blue-600 rounded-xl text-xs font-bold hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center gap-2 group/btn shadow-sm"
+                        >
+                          {isImporting === song.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <PlusCircle className="w-3 h-3" />
+                          )}
+                          {isImporting === song.id ? 'Importing...' : 'Add to My Library'}
+                        </button>
+                      </div>
                     </div>
-                    {globalResults.map(song => (
-                        <div key={song.id} className="bg-white p-5 rounded-2xl border border-blue-100 shadow-sm hover:shadow-md transition-all group relative overflow-hidden bg-gradient-to-br from-white to-blue-50/30">
-                            <div className="flex justify-between items-start mb-3">
-                                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-600 text-white">Online</span>
-                            </div>
-                            <h3 className="font-bold text-slate-900">{song.title}</h3>
-                            <p className="text-sm text-slate-500 mb-4 font-medium">{song.artist}</p>
-                            <button 
-                                onClick={() => importSong(song)}
-                                disabled={isImporting === song.id}
-                                className="w-full py-2 bg-white border border-blue-200 text-blue-600 rounded-xl text-xs font-bold hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center gap-2 group/btn shadow-sm"
-                            >
-                                {isImporting === song.id ? (
-                                    <Loader2 className="w-3 h-3 animate-spin" />
-                                ) : (
-                                    <PlusCircle className="w-3 h-3" />
-                                )}
-                                {isImporting === song.id ? 'Importing...' : 'Add to My Library'}
-                            </button>
-                        </div>
-                    ))}
-                  </>
+                  ))}
+                </>
               )}
             </div>
           </div>
 
-          <div className={`lg:w-96 fixed inset-0 lg:relative z-40 transition-transform lg:translate-x-0 ${
-            showMobileLineup ? 'translate-x-0' : 'translate-x-full'
-          }`}>
+          <div className={`lg:w-96 fixed inset-0 lg:relative z-40 transition-transform lg:translate-x-0 ${showMobileLineup ? 'translate-x-0' : 'translate-x-full'
+            }`}>
             <div className={`absolute inset-0 bg-slate-900/40 lg:hidden`} onClick={() => setShowMobileLineup(false)}></div>
             <div className="bg-white h-full lg:h-auto lg:rounded-3xl border-l lg:border border-slate-200 shadow-xl overflow-hidden sticky lg:top-24 w-[280px] sm:w-[350px] ml-auto lg:ml-0 flex flex-col">
               <div className="bg-slate-900 p-6 text-white flex-shrink-0">
-                    <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-2">
-                            <button onClick={() => setShowMobileLineup(false)} className="lg:hidden p-1 hover:bg-slate-800 rounded-md">
-                                <X className="w-4 h-4 text-slate-400" />
-                            </button>
-                            <h2 className="text-lg font-bold flex items-center gap-2">
-                                <Calendar className="w-5 h-5 text-blue-400" />
-                                Service Lineup
-                            </h2>
-                        </div>
-                        <button onClick={clearLineup} className="p-1 hover:bg-red-500/20 rounded-md text-slate-400 transition-all" title="Clear All">
-                            <Trash2 className="w-4 h-4" />
-                        </button>
-                    </div>
-                    <div className="space-y-3">
-                        <div>
-                            <label className="text-xs text-slate-400 mb-1.5 block font-medium">Select Role</label>
-                            <select 
-                                value={lineupRole} 
-                                onChange={(e) => {
-                                    setLineupRole(e.target.value);
-                                    if (e.target.value !== 'Worship Leader') setLineupTheme('');
-                                }}
-                                className="w-full bg-slate-800 text-white text-sm rounded-xl p-2.5 border border-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
-                            >
-                                <option value="" disabled hidden>-- Pagpili og Role --</option>
-                                <option value="Moderator">Moderator</option>
-                                <option value="Worship Leader">Worship Leader</option>
-                                <option value="All">All Roles (Admin)</option>
-                            </select>
-                        </div>
-                        {lineupRole === 'Worship Leader' && (
-                            <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-                                <label className="text-xs text-slate-400 mb-1.5 block font-medium">Worship Theme (Optional)</label>
-                                <input 
-                                    type="text" 
-                                    placeholder="e.g. Faith, Joy, Hope..."
-                                    value={lineupTheme}
-                                    onChange={(e) => setLineupTheme(e.target.value)}
-                                    className="w-full bg-slate-800 text-white text-sm rounded-xl p-2.5 border border-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-500"
-                                />
-                            </div>
-                        )}
-                    </div>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setShowMobileLineup(false)} className="lg:hidden p-1 hover:bg-slate-800 rounded-md">
+                      <X className="w-4 h-4 text-slate-400" />
+                    </button>
+                    <h2 className="text-lg font-bold flex items-center gap-2">
+                      <Calendar className="w-5 h-5 text-blue-400" />
+                      Service Lineup
+                    </h2>
+                  </div>
+                  <button onClick={clearLineup} className="p-1 hover:bg-red-500/20 rounded-md text-slate-400 transition-all" title="Clear All">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
-                
-                <div className="p-4 space-y-4 flex-1 overflow-y-auto min-h-0 max-h-[calc(100vh-350px)] lg:max-h-[60vh]">
-                  {lineupRole ? (
-                      <>
-                        <p className="text-[10px] text-slate-400 mb-2 font-medium px-2 italic">Click a slot to choose a song</p>
-                        {lineupSlots.map((slot) => (
-                          <div 
-                            key={slot.id} 
-                            onClick={() => handleSlotClick(slot)}
-                            className={`cursor-pointer transition-all duration-200 rounded-2xl border-2 ${
-                                activeSlotId === slot.id 
-                                ? 'border-blue-500 bg-blue-50' 
-                                : 'border-slate-100 hover:border-slate-200 bg-white'
-                            }`}
-                          >
-                          <div className="p-4">
-                              <div className="flex justify-between items-center mb-2">
-                                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{slot.label}</span>
-                                  <span className="text-[10px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">
-                                      {slot.songs.length} songs
-                                  </span>
-                              </div>
-                              
-                              {slot.songs.length > 0 ? (
-                                  <div className="space-y-2 animate-in fade-in slide-in-from-left-2 duration-300">
-                                      {slot.songs.map((song) => {
-                                          const albumInfo = albumCache[song.id];
-                                          const ytThumb = youtubeThumbnails[song.id];
-                                          return (
-                                          <div key={song.id} className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl group/song relative">
-                                              {ytThumb || albumInfo?.artUrl ? (
-                                                  <img 
-                                                      src={ytThumb || albumInfo.artUrl} 
-                                                      alt={song.title}
-                                                      className="w-9 h-9 rounded-lg object-cover border border-slate-200 flex-shrink-0 shadow-sm"
-                                                      onError={(e) => { e.target.style.display='none'; }}
-                                                  />
-                                              ) : (
-                                                  <div className="w-9 h-9 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-blue-600 flex-shrink-0">
-                                                      <Music className="w-4 h-4" />
-                                                  </div>
-                                              )}
-                                              <div className="flex-1 min-w-0">
-                                                  <p className="text-xs font-bold text-slate-900 truncate">{song.title}</p>
-                                                  <p className="text-[10px] text-slate-500 truncate">
-                                                      {albumInfo?.albumName ? albumInfo.albumName : song.artist}
-                                                  </p>
-                                              </div>
-                                              <button 
-                                                  onClick={(e) => { e.stopPropagation(); removeSongFromSlot(slot.id, song.id); }}
-                                                  className="opacity-0 group-hover/song:opacity-100 p-1 hover:bg-red-50 hover:text-red-600 text-slate-400 rounded-md transition-all flex-shrink-0"
-                                              >
-                                                  <X className="w-3 h-3" />
-                                              </button>
-                                          </div>
-                                          );
-                                      })}
-                                  </div>
-                              ) : (
-                                  <div className="flex items-center gap-3 text-slate-300 italic group">
-                                      <div className="w-8 h-8 rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center group-hover:border-blue-300 transition-colors">
-                                          <Plus className="w-4 h-4" />
-                                      </div>
-                                      <span className="text-xs">Add songs...</span>
-                                  </div>
-                              )}
-                          </div>
-                        </div>
-                      ))}
-                      </>
-                  ) : (
-                      <div className="flex flex-col items-center justify-center h-full text-center px-4 py-10 opacity-60">
-                          <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
-                              <CheckCircle2 className="w-8 h-8 text-slate-300" />
-                          </div>
-                          <p className="text-sm font-bold text-slate-600 mb-2">Kinsa man ka?</p>
-                          <p className="text-xs text-slate-400">Palihug pagpili og role (Moderator o Worship Leader) sa ibabaw para makasugod na ta sa Lineup.</p>
-                      </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1.5 block font-medium">Select Role</label>
+                    <select
+                      value={lineupRole}
+                      onChange={(e) => {
+                        setLineupRole(e.target.value);
+                        if (e.target.value !== 'Worship Leader') setLineupTheme('');
+                      }}
+                      className="w-full bg-slate-800 text-white text-sm rounded-xl p-2.5 border border-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                    >
+                      <option value="" disabled hidden>-- Pagpili og Role --</option>
+                      <option value="Moderator">Moderator</option>
+                      <option value="Worship Leader">Worship Leader</option>
+                      <option value="All">All Roles (Admin)</option>
+                    </select>
+                  </div>
+                  {lineupRole === 'Worship Leader' && (
+                    <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                      <label className="text-xs text-slate-400 mb-1.5 block font-medium">Worship Theme (Optional)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Faith, Joy, Hope..."
+                        value={lineupTheme}
+                        onChange={(e) => setLineupTheme(e.target.value)}
+                        className="w-full bg-slate-800 text-white text-sm rounded-xl p-2.5 border border-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-500"
+                      />
+                    </div>
                   )}
+                </div>
+              </div>
+
+              <div className="p-4 space-y-4 flex-1 overflow-y-auto min-h-0 max-h-[calc(100vh-350px)] lg:max-h-[60vh]">
+                {lineupRole ? (
+                  <>
+                    <p className="text-[10px] text-slate-400 mb-2 font-medium px-2 italic">Click a slot to choose a song</p>
+                    {lineupSlots.map((slot) => (
+                      <div
+                        key={slot.id}
+                        onClick={() => handleSlotClick(slot)}
+                        className={`cursor-pointer transition-all duration-200 rounded-2xl border-2 ${activeSlotId === slot.id
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-slate-100 hover:border-slate-200 bg-white'
+                          }`}
+                      >
+                        <div className="p-4">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{slot.label}</span>
+                            <span className="text-[10px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">
+                              {slot.songs.length} songs
+                            </span>
+                          </div>
+
+                          {slot.songs.length > 0 ? (
+                            <div className="space-y-2 animate-in fade-in slide-in-from-left-2 duration-300">
+                              {slot.songs.map((song) => {
+                                const albumInfo = albumCache[song.id];
+                                const ytThumb = youtubeThumbnails[song.id];
+                                return (
+                                  <div key={song.id} className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl group/song relative">
+                                    {ytThumb || albumInfo?.artUrl ? (
+                                      <img
+                                        src={ytThumb || albumInfo.artUrl}
+                                        alt={song.title}
+                                        className="w-9 h-9 rounded-lg object-cover border border-slate-200 flex-shrink-0 shadow-sm"
+                                        onError={(e) => { e.target.style.display = 'none'; }}
+                                      />
+                                    ) : (
+                                      <div className="w-9 h-9 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-blue-600 flex-shrink-0">
+                                        <Music className="w-4 h-4" />
+                                      </div>
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-xs font-bold text-slate-900 truncate">{song.title}</p>
+                                      <p className="text-[10px] text-slate-500 truncate">
+                                        {albumInfo?.albumName ? albumInfo.albumName : song.artist}
+                                      </p>
+                                    </div>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); removeSongFromSlot(slot.id, song.id); }}
+                                      className="opacity-0 group-hover/song:opacity-100 p-1 hover:bg-red-50 hover:text-red-600 text-slate-400 rounded-md transition-all flex-shrink-0"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-3 text-slate-300 italic group">
+                              <div className="w-8 h-8 rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center group-hover:border-blue-300 transition-colors">
+                                <Plus className="w-4 h-4" />
+                              </div>
+                              <span className="text-xs">Add songs...</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full text-center px-4 py-10 opacity-60">
+                    <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+                      <CheckCircle2 className="w-8 h-8 text-slate-300" />
+                    </div>
+                    <p className="text-sm font-bold text-slate-600 mb-2">Kinsa man ka?</p>
+                    <p className="text-xs text-slate-400">Palihug pagpili og role (Moderator o Worship Leader) sa ibabaw para makasugod na ta sa Lineup.</p>
+                  </div>
+                )}
               </div>
 
 
               <div className="p-6 bg-slate-50 border-t border-slate-200">
-                <button 
+                <button
                   onClick={shareLineup}
                   disabled={lineupSlots.every(s => s.songs.length === 0)}
-                  className={`w-full py-4 font-bold rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 group active:scale-95 disabled:bg-slate-300 ${
-                    showCopied ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-slate-900 hover:bg-black text-white'
-                  }`}
+                  className={`w-full py-4 font-bold rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 group active:scale-95 disabled:bg-slate-300 ${showCopied ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-slate-900 hover:bg-black text-white'
+                    }`}
                 >
                   {showCopied ? (
                     <><CheckCircle2 className="w-5 h-5" /> Copied to Clipboard!</>
@@ -1051,26 +1129,26 @@ function App() {
                 </p>
 
                 {showCopied && (
-                    <div className="mt-4 grid grid-cols-2 gap-2 animate-in fade-in zoom-in duration-300">
-                        <button 
-                            onClick={openMessenger}
-                            className="flex flex-col items-center justify-center p-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-all group"
-                        >
-                            <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center mb-1 shadow-md group-hover:scale-110 transition-transform">
-                                <ExternalLink className="w-4 h-4 text-white" />
-                            </div>
-                            <span className="text-[10px] font-bold text-blue-700">Open Messenger</span>
-                        </button>
-                        <button 
-                            onClick={shareToWhatsApp}
-                            className="flex flex-col items-center justify-center p-3 bg-green-50 hover:bg-green-100 border border-green-200 rounded-xl transition-all group"
-                        >
-                            <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center mb-1 shadow-md group-hover:scale-110 transition-transform">
-                                <Share2 className="w-4 h-4 text-white" />
-                            </div>
-                            <span className="text-[10px] font-bold text-green-700">Post to WhatsApp</span>
-                        </button>
-                    </div>
+                  <div className="mt-4 grid grid-cols-2 gap-2 animate-in fade-in zoom-in duration-300">
+                    <button
+                      onClick={openMessenger}
+                      className="flex flex-col items-center justify-center p-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-all group"
+                    >
+                      <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center mb-1 shadow-md group-hover:scale-110 transition-transform">
+                        <ExternalLink className="w-4 h-4 text-white" />
+                      </div>
+                      <span className="text-[10px] font-bold text-blue-700">Open Messenger</span>
+                    </button>
+                    <button
+                      onClick={shareToWhatsApp}
+                      className="flex flex-col items-center justify-center p-3 bg-green-50 hover:bg-green-100 border border-green-200 rounded-xl transition-all group"
+                    >
+                      <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center mb-1 shadow-md group-hover:scale-110 transition-transform">
+                        <Share2 className="w-4 h-4 text-white" />
+                      </div>
+                      <span className="text-[10px] font-bold text-green-700">Post to WhatsApp</span>
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -1081,150 +1159,202 @@ function App() {
 
       {/* Lineup Confirmation & Preview Modal */}
       {showPreview && (
-          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
-              <div className="bg-white rounded-[2rem] shadow-2xl max-w-2xl w-full overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col md:flex-row h-[85vh] md:h-auto">
-                  
-                  {/* Left Side: Visual Review */}
-                  <div className="flex-1 p-8 bg-slate-50 overflow-y-auto">
-                      <div className="flex items-center gap-3 mb-6">
-                          <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center text-green-600">
-                              <CheckCircle2 className="w-6 h-6" />
-                          </div>
-                          <div>
-                              <h3 className="text-xl font-black text-slate-900">Final Review</h3>
-                              <p className="text-xs text-slate-500 font-medium">Siguroha nga husto ang tanang songs.</p>
-                          </div>
-                      </div>
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="bg-white rounded-[2rem] shadow-2xl max-w-2xl w-full overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col md:flex-row h-[85vh] md:h-auto">
 
-                      <div className="space-y-6">
-                        {lineupSlots.map(slot => (
-                            slot.songs.length > 0 && (
-                                <div key={slot.id} className="space-y-2">
-                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{slot.label}</span>
-                                    <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100 overflow-hidden shadow-sm">
-                                        {slot.songs.map(song => {
-                                          const albumInfo = albumCache[song.id];
-                                          const ytThumb = youtubeThumbnails[song.id];
-                                          return (
-                                            <div key={song.id} className="p-3 flex items-center gap-3">
-                                                {ytThumb || albumInfo?.artUrl ? (
-                                                    <img 
-                                                        src={ytThumb || albumInfo.artUrl} 
-                                                        alt={song.title}
-                                                        className="w-12 h-12 rounded-xl object-cover border border-slate-100 shadow-sm flex-shrink-0"
-                                                        onError={(e) => { e.target.style.display='none'; }}
-                                                    />
-                                                ) : (
-                                                    <div className="w-12 h-12 rounded-xl bg-blue-50 border border-slate-100 flex items-center justify-center flex-shrink-0">
-                                                        <Music className="w-5 h-5 text-blue-400" />
-                                                    </div>
-                                                )}
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="text-sm font-bold text-slate-900">{song.title}</p>
-                                                    <p className="text-[10px] text-slate-500">{song.artist} • Key: {song.key}</p>
-                                                    {albumInfo?.albumName && (
-                                                        <p className="text-[10px] text-blue-500 font-medium truncate">💿 {albumInfo.albumName}</p>
-                                                    )}
-                                                </div>
-                                            </div>
-                                          );
-                                        })}
-                                    </div>
-                                </div>
-                            )
-                        ))}
-                      </div>
-                  </div>
-
-                  {/* Right Side: Share Actions */}
-                  <div className="w-full md:w-80 p-8 bg-white border-l border-slate-100 flex flex-col">
-                      <div className="flex justify-between items-center mb-6">
-                        <span className="text-xs font-bold text-blue-600 uppercase tracking-widest">Share Ready</span>
-                        <button onClick={() => setShowPreview(false)} className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 transition-all">
-                            <X className="w-5 h-5" />
-                        </button>
-                      </div>
-
-                      <p className="text-xs text-slate-500 mb-4 font-medium leading-relaxed">
-                          Mao kini ang text nga i-paste nimo sa Messenger:
-                      </p>
-                      
-                      <div className="flex-1 relative mb-6">
-                          <textarea 
-                            readOnly
-                            className="w-full h-full p-4 bg-slate-900 text-green-400 font-mono text-[10px] rounded-2xl border-none focus:ring-0 resize-none shadow-inner"
-                            value={lineupText}
-                          />
-                          <button 
-                            onClick={() => {
-                                navigator.clipboard.writeText(lineupText);
-                                setShowCopied(true);
-                                setTimeout(() => setShowCopied(false), 2000);
-                            }}
-                            className="absolute bottom-3 right-3 p-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-all flex items-center gap-1.5 text-[10px] font-bold"
-                          >
-                              {showCopied ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                              {showCopied ? 'Copied!' : 'Copy'}
-                          </button>
-                      </div>
-
-                      {/* YouTube Playlist Generator */}
-                      <div className="mb-4 p-4 bg-red-50 border border-red-100 rounded-2xl">
-                          <p className="text-[10px] font-bold text-red-700 mb-2 uppercase tracking-wider">🎵 YouTube Playlist</p>
-                          <p className="text-[10px] text-slate-500 mb-3 leading-relaxed">
-                              I-generate ang usa ka playlist link. Pag-click sa link, mag-play dayon ang tanang kanta sunod-sunod sa YouTube!
-                          </p>
-                          {youtubePlaylistUrl ? (
-                              <div className="space-y-2">
-                                  <div className="flex items-center gap-2 p-2 bg-white border border-green-200 rounded-xl">
-                                      <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
-                                      <p className="text-[9px] text-green-700 font-bold truncate flex-1">Playlist ready!</p>
-                                      <button
-                                          onClick={() => { navigator.clipboard.writeText(youtubePlaylistUrl); }}
-                                          className="text-[9px] bg-green-100 text-green-700 px-2 py-1 rounded-lg font-bold hover:bg-green-200 transition-all flex-shrink-0"
-                                      >
-                                          Copy Link
-                                      </button>
-                                  </div>
-                                  <button
-                                      onClick={() => window.open(youtubePlaylistUrl, '_blank')}
-                                      className="w-full py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 active:scale-95 shadow-md shadow-red-500/20"
-                                  >
-                                      <PlayCircle className="w-4 h-4" /> Open Playlist sa YouTube
-                                  </button>
-                              </div>
-                          ) : (
-                              <button
-                                  onClick={generateYouTubePlaylist}
-                                  disabled={isGeneratingPlaylist}
-                                  className="w-full py-3 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 active:scale-95 shadow-md shadow-red-500/20"
-                              >
-                                  {isGeneratingPlaylist ? (
-                                      <><Loader2 className="w-4 h-4 animate-spin" /> Gina-search ang mga kanta...</>
-                                  ) : (
-                                      <><PlayCircle className="w-4 h-4" /> Generate YouTube Playlist</>
-                                  )}
-                              </button>
-                          )}
-                      </div>
-
-                      <div className="space-y-3">
-                          <button 
-                            onClick={openMessenger}
-                            className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black text-xs shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center gap-2 active:scale-95"
-                          >
-                              <ExternalLink className="w-4 h-4" /> Open Messenger
-                          </button>
-                          <button 
-                            onClick={shareToWhatsApp}
-                            className="w-full py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-black text-xs transition-all flex items-center justify-center gap-2 active:scale-95"
-                          >
-                              <Share2 className="w-4 h-4 text-green-600" /> WhatsApp
-                          </button>
-                      </div>
-                  </div>
+            {/* Left Side: Visual Review */}
+            <div className="flex-1 p-8 bg-slate-50 overflow-y-auto">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center text-green-600">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-slate-900">Final Review</h3>
+                  <p className="text-xs text-slate-500 font-medium">Siguroha nga husto ang tanang songs.</p>
+                </div>
               </div>
+
+              <div className="space-y-6">
+                {lineupSlots.map(slot => (
+                  slot.songs.length > 0 && (
+                    <div key={slot.id} className="space-y-2">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{slot.label}</span>
+                      <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100 overflow-hidden shadow-sm">
+                        {slot.songs.map(song => {
+                          const albumInfo = albumCache[song.id];
+                          const ytThumb = youtubeThumbnails[song.id];
+                          return (
+                            <div key={song.id} className="p-3 flex items-center gap-3">
+                              {ytThumb || albumInfo?.artUrl ? (
+                                <img
+                                  src={ytThumb || albumInfo.artUrl}
+                                  alt={song.title}
+                                  className="w-12 h-12 rounded-xl object-cover border border-slate-100 shadow-sm flex-shrink-0"
+                                  onError={(e) => { e.target.style.display = 'none'; }}
+                                />
+                              ) : (
+                                <div className="w-12 h-12 rounded-xl bg-blue-50 border border-slate-100 flex items-center justify-center flex-shrink-0">
+                                  <Music className="w-5 h-5 text-blue-400" />
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold text-slate-900">{song.title}</p>
+                                <p className="text-[10px] text-slate-500">{song.artist} • Key: {song.key}</p>
+                                {albumInfo?.albumName && (
+                                  <p className="text-[10px] text-blue-500 font-medium truncate">💿 {albumInfo.albumName}</p>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )
+                ))}
+              </div>
+            </div>
+
+            {/* Right Side: Share Actions */}
+            <div className="w-full md:w-80 p-8 bg-white border-l border-slate-100 flex flex-col">
+              <div className="flex justify-between items-center mb-6">
+                <span className="text-xs font-bold text-blue-600 uppercase tracking-widest">Share Ready</span>
+                <button onClick={() => setShowPreview(false)} className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 transition-all">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-500 mb-4 font-medium leading-relaxed">
+                Mao kini ang text nga i-paste nimo sa Messenger:
+              </p>
+
+              <div className="flex-1 relative mb-6">
+                <textarea
+                  readOnly
+                  className="w-full h-full p-4 bg-slate-900 text-green-400 font-mono text-[10px] rounded-2xl border-none focus:ring-0 resize-none shadow-inner"
+                  value={lineupText}
+                />
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(lineupText);
+                    setShowCopied(true);
+                    setTimeout(() => setShowCopied(false), 2000);
+                  }}
+                  className="absolute bottom-3 right-3 p-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-all flex items-center gap-1.5 text-[10px] font-bold"
+                >
+                  {showCopied ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  {showCopied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+
+              {/* YouTube Playlist Generator */}
+              <div className="mb-4 p-4 bg-red-50 border border-red-100 rounded-2xl">
+                <p className="text-[10px] font-bold text-red-700 mb-2 uppercase tracking-wider">🎵 YouTube Playlist</p>
+                <p className="text-[10px] text-slate-500 mb-3 leading-relaxed">
+                  I-generate ang usa ka playlist link. Pag-click sa link, mag-play dayon ang tanang kanta sunod-sunod sa YouTube!
+                </p>
+                {youtubePlaylistUrl ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 p-2 bg-white border border-green-200 rounded-xl">
+                      <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                      <p className="text-[9px] text-green-700 font-bold truncate flex-1">Playlist ready!</p>
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(youtubePlaylistUrl); }}
+                        className="text-[9px] bg-green-100 text-green-700 px-2 py-1 rounded-lg font-bold hover:bg-green-200 transition-all flex-shrink-0"
+                      >
+                        Copy Link
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => window.open(youtubePlaylistUrl, '_blank')}
+                      className="w-full py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 active:scale-95 shadow-md shadow-red-500/20"
+                    >
+                      <PlayCircle className="w-4 h-4" /> Open Playlist sa YouTube
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={generateYouTubePlaylist}
+                    disabled={isGeneratingPlaylist}
+                    className="w-full py-3 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 active:scale-95 shadow-md shadow-red-500/20"
+                  >
+                    {isGeneratingPlaylist ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /> Gina-search ang mga kanta...</>
+                    ) : (
+                      <><PlayCircle className="w-4 h-4" /> Generate YouTube Playlist</>
+                    )}
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                <button
+                  onClick={handleNativeShare}
+                  className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black text-xs shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center gap-2 active:scale-95"
+                >
+                  <Share2 className="w-4 h-4" /> Share via System
+                </button>
+                <button
+                  onClick={openMessenger}
+                  className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-[10px] transition-all flex items-center justify-center gap-2 active:scale-95"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-blue-600" /> Messenger
+                </button>
+                <button
+                  onClick={shareToWhatsApp}
+                  className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-[10px] transition-all flex items-center justify-center gap-2 active:scale-95"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-green-600" /> WhatsApp
+                </button>
+              </div>
+            </div>
           </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toast.show && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-5 duration-300">
+          <div className={`px-4 py-3 rounded-2xl shadow-xl flex items-center gap-3 border ${toast.type === 'error' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'
+            }`}>
+            {toast.type === 'error' ? (
+              <X className="w-5 h-5 flex-shrink-0" />
+            ) : (
+              <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
+            )}
+            <p className="font-bold text-sm tracking-tight">{toast.message}</p>
+            <button
+              onClick={() => setToast({ ...toast, show: false })}
+              className="ml-2 p-1 hover:bg-black/5 rounded-full transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Audio/Video Preview Mini Player */}
+      {previewState.isPlaying && previewState.videoId && (
+        <div className="fixed bottom-6 right-6 z-50 bg-white p-3 rounded-2xl shadow-2xl border border-slate-200 animate-in slide-in-from-bottom-5 duration-300">
+          <div className="flex items-center justify-between mb-2">
+             <span className="text-xs font-bold text-red-600 flex items-center gap-1.5 uppercase tracking-wider">
+               <PlayCircle className="w-3.5 h-3.5 animate-pulse" /> Now Playing Preview
+             </span>
+             <button onClick={() => setPreviewState({ songId: null, videoId: null, isLoading: false, isPlaying: false })} className="p-1 hover:bg-red-50 hover:text-red-600 rounded-lg text-slate-400 transition-colors">
+               <X className="w-4 h-4" />
+             </button>
+          </div>
+          <div className="rounded-xl overflow-hidden shadow-inner bg-slate-100 flex items-center justify-center">
+             <iframe
+                width="280"
+                height="157"
+                src={`https://www.youtube.com/embed/${previewState.videoId}?autoplay=1`}
+                title="YouTube video preview"
+                frameBorder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+             ></iframe>
+          </div>
+        </div>
       )}
     </div>
   );
