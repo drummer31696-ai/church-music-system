@@ -494,43 +494,35 @@ function App() {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
     });
 
-    lineupSlots.forEach(slot => slot.songs.forEach(song => fetchAlbumArt(song)));
-
-    let roleText = lineupRole === 'All' ? 'Full Service' : lineupRole;
-    let text = `✨ *WORSHIP LINEUP* ✨\n`;
-    text += `📅 *Date:* ${today}\n`;
-    text += `👤 *Role:* ${roleText}\n`;
-    text += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    let text = `✨ WORSHIP LINEUP ✨\n`;
+    text += `📅 ${today}\n`;
+    if (lineupRole && lineupRole !== 'All') {
+      text += `👤 ${lineupRole}\n`;
+    }
+    text += `\n`;
 
     let hasSongs = false;
 
     lineupSlots.forEach(slot => {
       if (slot.songs.length > 0) {
         hasSongs = true;
-        text += `🔹 *${slot.label.toUpperCase()}*\n`;
-        slot.songs.forEach((song, idx) => {
-          const albumInfo = albumCache[song.id];
-          const albumText = albumInfo?.albumName ? ` • 💿 ${albumInfo.albumName}` : '';
-          text += `   ${idx + 1}. ${song.title} [Key: ${song.key}]${albumText}\n`;
+        text += `🔹 ${slot.label.toUpperCase()}\n`;
+        slot.songs.forEach((song) => {
+          text += ` • ${song.title} (Key: ${song.key})\n`;
         });
         text += `\n`;
       }
     });
 
     if (!hasSongs) {
-      text += `   (Wala pay kanta nga na-add)\n\n`;
+      text += `(Wala pay kanta nga na-add)\n\n`;
     }
 
     if (youtubePlaylistUrl) {
-      if (isWhatsApp) {
-        text += `▶️ *PLAYLIST (Click to play):*\n👉 ${youtubePlaylistUrl}\n\n`;
-      } else {
-        text += `▶️ *YOUTUBE PLAYLIST:*\n👉 ${youtubePlaylistUrl}\n\n`;
-      }
+      text += `▶️ YOUTUBE PLAYLIST LINK:\n${youtubePlaylistUrl}\n\n`;
     }
 
-    text += `━━━━━━━━━━━━━━━━━━━━━\n`;
-    text += `🎹 _Sent via Church Music System_ 🕊️`;
+    text += `🎹 Sent via Church Music System`;
 
     return text;
   };
